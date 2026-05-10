@@ -47,5 +47,11 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>NeveraMind necesita acceso a la cámara para escanear facturas</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NeveraMind necesita acceso a tus fotos para seleccionar facturas</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>NeveraMind necesita guardar fotos de facturas</string>
 </dict>
 </plist>

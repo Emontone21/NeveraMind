@@ -2,26 +2,33 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY
 
-// Diagnostic
 console.log('[NeveraMind] Gemini API key defined:', !!apiKey)
-
 if (!apiKey) {
   console.error('[NeveraMind] VITE_GEMINI_API_KEY is not set — check GitHub Secrets')
 }
 
-// Guard: use placeholder so module-level instantiation never throws
 const genAI = new GoogleGenerativeAI(apiKey || 'placeholder-key')
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const base64 = reader.result.split(',')[1]
-      resolve(base64)
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Accepts either:
+ *   - a raw base64 string (Capacitor Camera: photo.base64String)
+ *   - a data URL with prefix (legacy File input: "data:image/jpeg;base64,...")
+ * Returns { base64, mimeType }
+ */
+function normaliseImage(input, mimeTypeHint) {
+  if (typeof input === 'string') {
+    if (input.startsWith('data:')) {
+      // data URL — strip prefix
+      const [header, data] = input.split(',')
+      const mime = header.match(/:(.*?);/)?.[1] || mimeTypeHint || 'image/jpeg'
+      return { base64: data, mimeType: mime }
     }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
+    // Already raw base64
+    return { base64: input, mimeType: mimeTypeHint || 'image/jpeg' }
+  }
+  throw new Error('normaliseImage: expected string (base64 or data URL)')
 }
 
 function extractJSON(text) {
@@ -32,18 +39,25 @@ function extractJSON(text) {
   return text.trim()
 }
 
-export async function parseReceipt(imageFile) {
-  if (!apiKey) throw new Error('Gemini API key no configurada')
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+// ─── Public API ───────────────────────────────────────────────────────────────
 
-  const base64Data = await fileToBase64(imageFile)
-  const mimeType = imageFile.type || 'image/jpeg'
+/**
+ * parseReceipt(imageInput, mimeType?)
+ *
+ * imageInput: raw base64 string from Capacitor OR data URL from <input type="file">
+ * mimeType:   e.g. 'image/jpeg' — used when imageInput is raw base64
+ */
+export async function parseReceipt(imageInput, mimeType) {
+  if (!apiKey) throw new Error('Gemini API key no configurada')
+
+  const { base64, mimeType: resolvedMime } = normaliseImage(imageInput, mimeType)
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   const prompt = `Sos un analizador de tickets de supermercado. Extraé todos los artículos de comida y almacén de esta imagen de ticket. Para cada artículo devolvé: name (nombre en español), quantity (número), y unit (kg, g, L, ml, unidades, etc). Devolvé SOLO un array JSON como: [{ "name": string, "quantity": number, "unit": string }]. Si la cantidad no es clara, poné 1 como valor predeterminado en unit. No incluyas productos de limpieza, higiene personal ni artículos no alimentarios.`
 
   const result = await model.generateContent([
     prompt,
-    { inlineData: { mimeType, data: base64Data } },
+    { inlineData: { mimeType: resolvedMime, data: base64 } },
   ])
 
   const text = result.response.text()

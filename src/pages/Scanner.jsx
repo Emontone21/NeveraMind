@@ -1,13 +1,18 @@
 import { useState, useRef } from 'react'
+import { Capacitor } from '@capacitor/core'
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { parseReceipt } from '../lib/gemini'
 import { upsertItem } from '../lib/supabase'
 import { useToast } from '../context/AppContext'
 import Spinner from '../components/Spinner'
 
+const IS_NATIVE = Capacitor.isNativePlatform()
+
 export default function Scanner({ onInventoryUpdate }) {
-  const [phase, setPhase] = useState('upload') // upload | preview | review | done
-  const [previewUrl, setPreviewUrl] = useState(null)
-  const [imageFile, setImageFile] = useState(null)
+  const [phase, setPhase] = useState('upload') // upload | preview | review | loading
+  const [previewUrl, setPreviewUrl] = useState(null)   // for <img src>
+  const [capturedB64, setCapturedB64] = useState(null) // raw base64 (no prefix)
+  const [capturedMime, setCapturedMime] = useState('image/jpeg')
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -17,19 +22,54 @@ export default function Scanner({ onInventoryUpdate }) {
   const fileRef = useRef(null)
   const { addToast } = useToast()
 
+  // ─── Native: Capacitor Camera ───────────────────────────────────────────────
+  async function handleNativePhoto() {
+    try {
+      const photo = await Camera.getPhoto({
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Prompt,   // sheet: "Tomar foto" or "Elegir de galería"
+        quality: 85,
+        allowEditing: false,
+        correctOrientation: true,
+      })
+      const mime = `image/${photo.format || 'jpeg'}`
+      setCapturedB64(photo.base64String)
+      setCapturedMime(mime)
+      setPreviewUrl(`data:${mime};base64,${photo.base64String}`)
+      setPhase('preview')
+    } catch (err) {
+      // User pressed Cancel — not an error
+      const msg = err?.message || String(err)
+      if (/cancel|dismiss/i.test(msg)) return
+      console.error('[Scanner] Camera error:', err)
+      addToast('Error al acceder a la cámara: ' + msg, 'error')
+    }
+  }
+
+  // ─── Web fallback: <input type="file"> ─────────────────────────────────────
   function handleFileChange(e) {
     const file = e.target.files[0]
     if (!file) return
-    setImageFile(file)
+    const mime = file.type || 'image/jpeg'
+    setCapturedMime(mime)
     setPreviewUrl(URL.createObjectURL(file))
+    // Convert File → base64 so Gemini always gets the same format
+    const reader = new FileReader()
+    reader.onload = () => {
+      const b64 = reader.result.split(',')[1]
+      setCapturedB64(b64)
+    }
+    reader.readAsDataURL(file)
     setPhase('preview')
   }
 
+  // ─── OCR via Gemini ─────────────────────────────────────────────────────────
   async function handleScan() {
+    if (!capturedB64) return
     setLoading(true)
     setPhase('loading')
     try {
-      const extracted = await parseReceipt(imageFile)
+      const extracted = await parseReceipt(capturedB64, capturedMime)
       if (extracted.length === 0) {
         addToast('No encontré productos en la imagen. Agregá items manualmente.', 'warning')
         setPhase('review')
@@ -39,7 +79,7 @@ export default function Scanner({ onInventoryUpdate }) {
         setPhase('review')
       }
     } catch (err) {
-      console.error(err)
+      console.error('[Scanner] parseReceipt error:', err)
       addToast('No pude leer el ticket. Podés agregar los items manualmente.', 'error')
       setPhase('review')
       setItems([])
@@ -93,11 +133,13 @@ export default function Scanner({ onInventoryUpdate }) {
   function resetAll() {
     setPhase('upload')
     setPreviewUrl(null)
-    setImageFile(null)
+    setCapturedB64(null)
+    setCapturedMime('image/jpeg')
     setItems([])
     if (fileRef.current) fileRef.current.value = ''
   }
 
+  // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
       <header className="pt-2 pb-1">
@@ -106,7 +148,9 @@ export default function Scanner({ onInventoryUpdate }) {
       </header>
 
       {phase === 'upload' && (
-        <UploadZone fileRef={fileRef} onChange={handleFileChange} />
+        IS_NATIVE
+          ? <NativeUploadZone onPress={handleNativePhoto} />
+          : <WebUploadZone fileRef={fileRef} onChange={handleFileChange} />
       )}
 
       {phase === 'preview' && (
@@ -172,7 +216,7 @@ export default function Scanner({ onInventoryUpdate }) {
             onClick={handleConfirm}
             disabled={saving || items.length === 0}
           >
-            {saving ? 'Guardando...' : `Confirmar y agregar al inventario`}
+            {saving ? 'Guardando...' : 'Confirmar y agregar al inventario'}
           </button>
         </div>
       )}
@@ -180,7 +224,25 @@ export default function Scanner({ onInventoryUpdate }) {
   )
 }
 
-function UploadZone({ fileRef, onChange }) {
+// ─── Upload zone: native (Capacitor) ──────────────────────────────────────────
+function NativeUploadZone({ onPress }) {
+  return (
+    <button
+      onClick={onPress}
+      className="card flex flex-col items-center justify-center gap-4 py-12 border-2 border-dashed border-brand-200 bg-brand-50 w-full active:bg-brand-100 transition-colors"
+    >
+      <span className="text-5xl">📷</span>
+      <div className="text-center">
+        <p className="font-semibold text-brand-700">Tocá para escanear tu ticket</p>
+        <p className="text-brand-400 text-sm mt-1">Usá la cámara o elegí desde tu galería</p>
+      </div>
+      <span className="btn-primary pointer-events-none">Abrir cámara</span>
+    </button>
+  )
+}
+
+// ─── Upload zone: web (file input fallback) ────────────────────────────────────
+function WebUploadZone({ fileRef, onChange }) {
   return (
     <label className="card flex flex-col items-center justify-center gap-4 py-12 border-2 border-dashed border-brand-200 bg-brand-50 cursor-pointer active:bg-brand-100 transition-colors">
       <span className="text-5xl">📷</span>
@@ -201,6 +263,7 @@ function UploadZone({ fileRef, onChange }) {
   )
 }
 
+// ─── Review / edit extracted items ────────────────────────────────────────────
 function ReviewItem({ item, onChange, onRemove }) {
   return (
     <div className="card flex items-center gap-2 py-3">
@@ -238,6 +301,7 @@ function ReviewItem({ item, onChange, onRemove }) {
   )
 }
 
+// ─── Add item manually ─────────────────────────────────────────────────────────
 function AddManualItem({ name, qty, unit, onNameChange, onQtyChange, onUnitChange, onAdd }) {
   return (
     <div className="card border-dashed border-2 border-brand-200 bg-brand-50">

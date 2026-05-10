@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment — contains API keys, never commit
+.env
+.env.local
+.env.*.local
+
+# Capacitor — Pods are installed in CI via pod install
+ios/App/Pods/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/*.xcodeproj/xcuserdata/
+ios/App/DerivedData/
+
+# macOS
+.DS_Store
+*.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# Vite cache
+.vite/

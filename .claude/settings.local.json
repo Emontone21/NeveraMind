@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__computer",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell(Start-Process -FilePath \"cmd.exe\" -ArgumentList \"/c cd `\"C:\\\\Users\\\\equipo\\\\Desktop\\\\NeverMind`\" && npm run dev > `\"C:\\\\Users\\\\equipo\\\\AppData\\\\Local\\\\Temp\\\\vite2.log`\" 2>&1\" -WindowStyle Hidden)",
+      "Bash(npm install *)",
+      "Bash(cd /mnt/c/Users/equipo/Desktop/NeverMind && npm install @capacitor/core @capacitor/ios && npm install -D @capacitor/cli 2>&1 | tail -6)"
+    ]
+  }
+}

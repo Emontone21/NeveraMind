@@ -3,7 +3,22 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Diagnostic: log whether vars were inlined at build time
+console.log('[NeveraMind] Supabase URL defined:', !!supabaseUrl)
+console.log('[NeveraMind] Supabase Key defined:', !!supabaseAnonKey)
+
+if (!supabaseUrl || supabaseUrl === 'MISSING_URL') {
+  console.error('[NeveraMind] VITE_SUPABASE_URL is not set — check GitHub Secrets')
+}
+if (!supabaseAnonKey || supabaseAnonKey === 'MISSING_KEY') {
+  console.error('[NeveraMind] VITE_SUPABASE_ANON_KEY is not set — check GitHub Secrets')
+}
+
+// Guard: don't call createClient with empty values (throws and crashes the app)
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key'
+)
 
 export async function getInventory() {
   const { data, error } = await supabase

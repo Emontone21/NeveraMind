@@ -5,8 +5,6 @@ import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
 // ─── Env variable check ───────────────────────────────────────────────────────
-// In Capacitor/WKWebView the variables are inlined at build time via vite.config.
-// If any is missing, show a visible error instead of a blank white screen.
 const REQUIRED_ENV = {
   VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
   VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
@@ -14,28 +12,30 @@ const REQUIRED_ENV = {
 }
 
 const missingVars = Object.entries(REQUIRED_ENV)
-  .filter(([, v]) => !v || v === 'undefined')
+  .filter(([, v]) => !v || v === 'undefined' || v === '')
   .map(([k]) => k)
 
 if (missingVars.length > 0) {
+  // Show missing vars visibly — covers blank screen when secrets not set in CI
   document.getElementById('root').innerHTML = `
     <div style="
-      position:fixed;inset:0;background:#fff;color:#dc2626;
-      font-family:monospace;font-size:14px;
-      padding:60px 24px 24px;line-height:1.6;
+      position:fixed;inset:0;background:#f0fdf4;color:#dc2626;
+      font-family:-apple-system,sans-serif;font-size:14px;
+      padding:80px 24px 24px;line-height:1.6;box-sizing:border-box;
     ">
-      <h2 style="font-size:18px;margin-bottom:12px;">⚠️ Variables de entorno faltantes</h2>
-      <p>Las siguientes variables no fueron incluidas en el build:</p>
-      <ul style="margin:12px 0 0 16px;">
+      <div style="font-size:40px;margin-bottom:16px;">⚠️</div>
+      <h2 style="font-size:18px;margin:0 0 12px;color:#991b1b;">Variables de entorno faltantes</h2>
+      <p style="margin:0 0 8px;">El build no incluyó estas variables:</p>
+      <ul style="margin:8px 0 0 16px;color:#7f1d1d;">
         ${missingVars.map(v => `<li><code>${v}</code></li>`).join('')}
       </ul>
       <p style="margin-top:16px;color:#6b7280;font-size:12px;">
-        Asegurate de que el build se haga con el .env cargado o via GitHub Secrets.
+        Agregá los GitHub Secrets y volvé a triggerear el workflow.
       </p>
     </div>
   `
 } else {
-  // Register service worker only when running as PWA (not inside Capacitor)
+  // Only register service worker when running as PWA, not inside Capacitor native
   if ('serviceWorker' in navigator && !window.Capacitor) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js').catch(() => {})

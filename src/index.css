@@ -5,7 +5,6 @@
 @layer base {
   html {
     height: 100%;
-    /* iOS Safari full-height fix */
     height: -webkit-fill-available;
     scroll-behavior: smooth;
   }
@@ -15,8 +14,16 @@
     min-height: 100vh;
     min-height: -webkit-fill-available;
     overscroll-behavior: none;
-    /* iOS smooth momentum scrolling */
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Ensure #root always fills the screen — prevents empty green canvas */
+  #root {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    display: flex;
+    flex-direction: column;
+    background-color: #f0fdf4; /* brand-50 — matches body */
   }
 
   /* Prevent double-tap zoom on all interactive elements */

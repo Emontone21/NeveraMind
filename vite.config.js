@@ -12,6 +12,11 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       host: true,
     },
+    build: {
+      // Target Safari 14 (iOS 14+) to avoid unsupported JS features in WKWebView.
+      // This transpiles away: optional chaining edge cases, nullish coalescing, etc.
+      target: ['es2020', 'safari14'],
+    },
     // Inline every VITE_* variable as a compile-time constant so the built
     // JS bundle works inside WKWebView (no dynamic import.meta.env at runtime).
     define: {

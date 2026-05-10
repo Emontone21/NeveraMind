@@ -1,7 +1,16 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY
-const genAI = new GoogleGenerativeAI(apiKey)
+
+// Diagnostic
+console.log('[NeveraMind] Gemini API key defined:', !!apiKey)
+
+if (!apiKey) {
+  console.error('[NeveraMind] VITE_GEMINI_API_KEY is not set — check GitHub Secrets')
+}
+
+// Guard: use placeholder so module-level instantiation never throws
+const genAI = new GoogleGenerativeAI(apiKey || 'placeholder-key')
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -24,6 +33,7 @@ function extractJSON(text) {
 }
 
 export async function parseReceipt(imageFile) {
+  if (!apiKey) throw new Error('Gemini API key no configurada')
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   const base64Data = await fileToBase64(imageFile)
@@ -33,12 +43,7 @@ export async function parseReceipt(imageFile) {
 
   const result = await model.generateContent([
     prompt,
-    {
-      inlineData: {
-        mimeType,
-        data: base64Data,
-      },
-    },
+    { inlineData: { mimeType, data: base64Data } },
   ])
 
   const text = result.response.text()
@@ -55,6 +60,7 @@ export async function parseReceipt(imageFile) {
 }
 
 export async function getRecipeSuggestions(availableItems, filter) {
+  if (!apiKey) throw new Error('Gemini API key no configurada')
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   const ingredientsList = availableItems

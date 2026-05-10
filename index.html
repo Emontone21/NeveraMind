@@ -3,25 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon-192.png" />
-    <!-- Viewport: viewport-fit=cover is required for iPhone notch / Dynamic Island -->
+    <!-- Viewport: viewport-fit=cover for iPhone notch / Dynamic Island -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
 
-    <!-- Content Security Policy — allows WKWebView to reach Supabase & Gemini -->
-    <meta http-equiv="Content-Security-Policy" content="
-      default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;
-      connect-src * https://*.supabase.co https://generativelanguage.googleapis.com;
-      img-src * data: blob:;
-    ">
+    <!-- Content Security Policy — lets WKWebView reach Supabase & Gemini -->
+    <meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * https://*.supabase.co https://generativelanguage.googleapis.com; img-src * data: blob:;">
 
-    <!-- Theme -->
     <meta name="theme-color" content="#22c55e" />
-
-    <!-- iOS PWA / Capacitor -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="NeveraMind" />
-
     <meta name="description" content="Tu heladera inteligente — gestioná tu inventario y descubrí qué cocinar hoy" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
@@ -29,9 +21,53 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>NeveraMind</title>
+
+    <!-- Global error catcher — runs BEFORE any JS module loads.
+         Catches crashes that would otherwise leave a silent blank screen. -->
+    <script>
+      window.__appErrors = [];
+      window.onerror = function(msg, src, line, col, err) {
+        window.__appErrors.push({ msg, src, line, err });
+        var el = document.getElementById('debug-info');
+        if (el) {
+          el.textContent = 'JS Error: ' + msg + ' (' + (src || '').split('/').pop() + ':' + line + ')';
+          el.style.color = '#dc2626';
+        }
+        console.error('[NeveraMind onerror]', msg, src, line, err);
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        var reason = e.reason && e.reason.message ? e.reason.message : String(e.reason);
+        window.__appErrors.push({ reason });
+        var el = document.getElementById('debug-info');
+        if (el) {
+          el.textContent = 'Promise Error: ' + reason;
+          el.style.color = '#dc2626';
+        }
+        console.error('[NeveraMind unhandledrejection]', reason);
+      });
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Fallback shown while React loads (or if it crashes).
+         React will replace the contents of #root on successful mount. -->
+    <div id="root">
+      <div id="loading-fallback" style="
+        padding: 80px 24px 24px;
+        text-align: center;
+        font-family: -apple-system, sans-serif;
+        color: #166534;
+        background: #f0fdf4;
+        min-height: 100vh;
+        box-sizing: border-box;
+      ">
+        <div style="font-size: 48px; margin-bottom: 16px;">🥦</div>
+        <h2 style="font-size: 20px; font-weight: 700; margin: 0 0 8px;">NeveraMind</h2>
+        <p id="debug-info" style="font-size: 14px; color: #4ade80; margin: 0;">Cargando...</p>
+        <p style="font-size: 12px; color: #86efac; margin-top: 32px;">
+          Si ves este mensaje por más de 5 segundos, hay un error de carga.
+        </p>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

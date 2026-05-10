@@ -15,12 +15,28 @@ export default function App() {
 
   return (
     <ToastProvider>
-      {/* Full-screen container that extends under status bar (black-translucent) */}
-      <div className="min-h-screen bg-brand-50 flex flex-col">
-        {/* Status bar spacer for iPhone notch / Dynamic Island */}
-        <div className="w-full bg-brand-50 safe-top" />
+      {/*
+        Layout strategy for iOS / Capacitor:
+        - Outer div: min-h-screen keeps it tall even if children are empty
+        - safe-top div: explicit spacer for notch / Dynamic Island
+        - main: NO overflow-y-auto here (causes flex-child collapse on older iOS);
+          scrolling is handled by the body. pb-safe-nav avoids the fixed nav bar.
+        - BottomNav: fixed, bottom-0, with its own safe-bottom spacer inside
+      */}
+      <div className="flex flex-col bg-brand-50" style={{ minHeight: '100vh', minHeight: '-webkit-fill-available' }}>
 
-        <main className="flex-1 px-4 pb-safe-nav pt-2 max-w-lg mx-auto w-full safe-x overflow-y-auto">
+        {/* Notch / Dynamic Island spacer */}
+        <div className="w-full bg-brand-50" style={{ height: 'env(safe-area-inset-top)' }} />
+
+        <main
+          className="flex-1 px-4 max-w-lg mx-auto w-full"
+          style={{
+            paddingTop: '0.5rem',
+            paddingBottom: 'calc(5rem + env(safe-area-inset-bottom))',
+            paddingLeft: 'max(1rem, env(safe-area-inset-left))',
+            paddingRight: 'max(1rem, env(safe-area-inset-right))',
+          }}
+        >
           {activeTab === 'scanner' && (
             <Scanner onInventoryUpdate={refreshInventory} />
           )}

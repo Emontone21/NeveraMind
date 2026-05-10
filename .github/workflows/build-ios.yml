@@ -28,10 +28,11 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
-      - name: Install CocoaPods dependencies
+      - name: Resolve Swift Package Manager dependencies
         run: |
-          cd ios/App
-          pod install
+          xcodebuild -resolvePackageDependencies \
+            -project ios/App/App.xcodeproj \
+            -scheme App
 
       - name: Create ExportOptions.plist
         run: |
@@ -57,14 +58,13 @@ jobs:
       - name: Archive app (unsigned)
         run: |
           xcodebuild archive \
-            -workspace ios/App/App.xcworkspace \
+            -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath build/App.xcarchive \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            | xcpretty || true
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Export IPA (unsigned)
         run: |
@@ -75,8 +75,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             || true
-          # Fallback: manually package .app into IPA if export fails without signing
-          if [ ! -f build/output/*.ipa ]; then
+          # Fallback: manually package .app into IPA if xcodebuild export fails
+          if ! ls build/output/*.ipa 2>/dev/null; then
             echo "Standard export did not produce IPA — packaging manually"
             APP_PATH=$(find build/App.xcarchive -name "*.app" | head -1)
             mkdir -p build/output/Payload
@@ -90,7 +90,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NeveraMind-unsigned-ipa
-          path: |
-            build/output/*.ipa
+          path: build/output/*.ipa
           retention-days: 30
           if-no-files-found: warn

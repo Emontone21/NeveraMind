@@ -3,12 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon-192.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Viewport: viewport-fit=cover is required for iPhone notch / Dynamic Island -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+
+    <!-- Content Security Policy — allows WKWebView to reach Supabase & Gemini -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;
+      connect-src * https://*.supabase.co https://generativelanguage.googleapis.com;
+      img-src * data: blob:;
+    ">
+
+    <!-- Theme -->
     <meta name="theme-color" content="#22c55e" />
+
+    <!-- iOS PWA / Capacitor -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="NeveraMind" />
+
     <meta name="description" content="Tu heladera inteligente — gestioná tu inventario y descubrí qué cocinar hoy" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="apple-touch-icon" href="/icon-192.png" />

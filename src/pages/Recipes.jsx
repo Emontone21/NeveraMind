@@ -1,29 +1,66 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getInventory, deductIngredients } from '../lib/supabase'
-import { getRecipeSuggestions } from '../lib/gemini'
+import { getRecipeSuggestions, getGeneralSuggestions } from '../lib/gemini'
 import { useToast } from '../context/AppContext'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
 
 const FILTERS = [
-  { id: 'sin_filtro', label: 'Sin filtro', icon: '🍽️' },
-  { id: 'proteico', label: 'Proteico', icon: '🥩' },
-  { id: 'vegetariano', label: 'Vegetariano', icon: '🥗' },
+  { id: 'sin_filtro',    label: 'Sin filtro',    icon: '🍽️' },
+  { id: 'proteico',      label: 'Proteico',      icon: '🥩' },
+  { id: 'vegetariano',   label: 'Vegetariano',   icon: '🥗' },
   { id: 'carbohidratos', label: 'Carbohidratos', icon: '🍝' },
 ]
 
+const NO_INGREDIENTS_MSG = {
+  proteico:      'algo proteico',
+  vegetariano:   'algo vegetariano',
+  carbohidratos: 'algo rico en carbohidratos',
+}
+
 export default function Recipes({ onInventoryUpdate }) {
   const [filter, setFilter] = useState('sin_filtro')
-  const [suggestions, setSuggestions] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [cooking, setCooking] = useState(null)
-  const [hasSearched, setHasSearched] = useState(false)
+
+  // ── Filtered suggestions ──────────────────────────────────────────────────
+  const [suggestions,  setSuggestions]  = useState([])
+  const [loading,      setLoading]      = useState(false)
+  const [hasSearched,  setHasSearched]  = useState(false)
+  const [noIngredients, setNoIngredients] = useState(false)
+  const [cooking,      setCooking]      = useState(null)
+
+  // ── General suggestions (auto-loaded, independent) ────────────────────────
+  const [generalSuggestions, setGeneralSuggestions] = useState([])
+  const [generalLoading,     setGeneralLoading]     = useState(false)
+  const [generalCooking,     setGeneralCooking]     = useState(null)
+
   const { addToast } = useToast()
 
+  // ── Load general suggestions ──────────────────────────────────────────────
+  const loadGeneral = useCallback(async () => {
+    setGeneralLoading(true)
+    setGeneralSuggestions([])
+    try {
+      const allItems = await getInventory()
+      const available = allItems.filter((i) => i.status === 'disponible')
+      if (available.length === 0) return
+      const results = await getGeneralSuggestions(available)
+      if (!results.noIngredients) setGeneralSuggestions(results)
+    } catch (err) {
+      console.error('[Recipes] getGeneralSuggestions:', err)
+      // Silent — this is a background section, don't interrupt with a toast
+    } finally {
+      setGeneralLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadGeneral() }, [loadGeneral])
+
+  // ── Filtered search ───────────────────────────────────────────────────────
   async function handleGetSuggestions() {
     setLoading(true)
     setHasSearched(true)
     setSuggestions([])
+    setNoIngredients(false)
     try {
       const allItems = await getInventory()
       const available = allItems.filter((i) => i.status === 'disponible')
@@ -33,7 +70,11 @@ export default function Recipes({ onInventoryUpdate }) {
         return
       }
       const results = await getRecipeSuggestions(available, filter)
-      setSuggestions(results)
+      if (results.noIngredients) {
+        setNoIngredients(true)
+      } else {
+        setSuggestions(results)
+      }
     } catch (err) {
       console.error(err)
       addToast('Error al obtener sugerencias. Intentá de nuevo.', 'error')
@@ -42,21 +83,35 @@ export default function Recipes({ onInventoryUpdate }) {
     }
   }
 
-  async function handleCook(suggestion) {
-    setCooking(suggestion.meal)
+  // ── Cook handler (shared between both sections) ───────────────────────────
+  async function handleCook(suggestion, isGeneral) {
+    if (isGeneral) setGeneralCooking(suggestion.meal)
+    else           setCooking(suggestion.meal)
     try {
       await deductIngredients(suggestion.ingredients)
       addToast(`✓ Ingredientes de "${suggestion.meal}" descontados del inventario`)
       onInventoryUpdate?.()
+      // Clear both sections — inventory changed, results are stale
       setSuggestions([])
       setHasSearched(false)
+      setNoIngredients(false)
+      loadGeneral()
     } catch (err) {
       console.error(err)
       addToast('Error al descontar los ingredientes', 'error')
     } finally {
-      setCooking(null)
+      if (isGeneral) setGeneralCooking(null)
+      else           setCooking(null)
     }
   }
+
+  // ── noIngredients message ─────────────────────────────────────────────────
+  const noIngredientsText = filter === 'sin_filtro'
+    ? 'No encontramos ninguna comida que puedas preparar con tus ingredientes actuales.'
+    : `No tenés ingredientes suficientes para cocinar algo ${NO_INGREDIENTS_MSG[filter]}.`
+
+  const filterLabel = FILTERS.find((f) => f.id === filter)?.label ?? filter
+  const showGeneralSection = generalLoading || generalSuggestions.length > 0
 
   return (
     <div className="flex flex-col gap-4">
@@ -65,8 +120,29 @@ export default function Recipes({ onInventoryUpdate }) {
         <p className="text-brand-400 text-sm mt-0.5">Te sugerimos recetas con lo que tenés disponible</p>
       </header>
 
+      {/* ── Comidas sugeridas (general, sin filtro) ─────────────────────── */}
+      {showGeneralSection && (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-semibold text-brand-800 text-base">Comidas sugeridas</h2>
+
+          {generalLoading && <Spinner message="Buscando ideas para hoy..." />}
+
+          {!generalLoading && generalSuggestions.map((s, idx) => (
+            <RecipeCard
+              key={idx}
+              suggestion={s}
+              onCook={(suggestion) => handleCook(suggestion, true)}
+              isCooking={generalCooking === s.meal}
+            />
+          ))}
+        </section>
+      )}
+
+      {showGeneralSection && <div className="border-t border-brand-100" />}
+
+      {/* ── Buscar por filtro ────────────────────────────────────────────── */}
       <div className="card flex flex-col gap-3">
-        <p className="text-sm font-semibold text-brand-700">Elegí un filtro:</p>
+        <p className="text-sm font-semibold text-brand-700">Buscar por tipo de comida:</p>
         <div className="grid grid-cols-2 gap-2">
           {FILTERS.map((f) => (
             <button
@@ -88,13 +164,25 @@ export default function Recipes({ onInventoryUpdate }) {
           onClick={handleGetSuggestions}
           disabled={loading}
         >
-          {loading ? 'Buscando ideas...' : '¿Qué cocino hoy? 🍳'}
+          {loading ? 'Buscando ideas...' : `Buscar recetas ${filterLabel !== 'Sin filtro' ? filterLabel.toLowerCase() : ''} 🍳`.trim()}
         </button>
       </div>
 
       {loading && <Spinner message="Pensando ideas con tu inventario..." />}
 
-      {!loading && hasSearched && suggestions.length === 0 && (
+      {!loading && hasSearched && noIngredients && (
+        <div className="card border-amber-200 bg-amber-50 flex flex-col items-center gap-2 py-6 text-center">
+          <span className="text-3xl">🥺</span>
+          <p className="font-semibold text-amber-800 text-sm leading-snug px-2">
+            {noIngredientsText}
+          </p>
+          <p className="text-amber-600 text-xs">
+            Probá con otro filtro o agregá más productos al inventario.
+          </p>
+        </div>
+      )}
+
+      {!loading && hasSearched && !noIngredients && suggestions.length === 0 && (
         <EmptyState
           icon="😅"
           title="No encontré sugerencias"
@@ -103,19 +191,19 @@ export default function Recipes({ onInventoryUpdate }) {
       )}
 
       {!loading && suggestions.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h2 className="font-semibold text-brand-700 text-sm">
-            3 ideas para hoy:
+        <section className="flex flex-col gap-3">
+          <h2 className="font-semibold text-brand-800 text-base">
+            {filterLabel !== 'Sin filtro' ? `Recetas ${filterLabel.toLowerCase()}` : 'Ideas para hoy'}
           </h2>
           {suggestions.map((s, idx) => (
             <RecipeCard
               key={idx}
               suggestion={s}
-              onCook={handleCook}
+              onCook={(suggestion) => handleCook(suggestion, false)}
               isCooking={cooking === s.meal}
             />
           ))}
-        </div>
+        </section>
       )}
     </div>
   )

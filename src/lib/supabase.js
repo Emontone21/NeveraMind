@@ -3,15 +3,15 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// Diagnostic: log whether vars were inlined at build time
-console.log('[NeveraMind] Supabase URL defined:', !!supabaseUrl)
-console.log('[NeveraMind] Supabase Key defined:', !!supabaseAnonKey)
-
-if (!supabaseUrl || supabaseUrl === 'MISSING_URL') {
-  console.error('[NeveraMind] VITE_SUPABASE_URL is not set — check GitHub Secrets')
-}
-if (!supabaseAnonKey || supabaseAnonKey === 'MISSING_KEY') {
-  console.error('[NeveraMind] VITE_SUPABASE_ANON_KEY is not set — check GitHub Secrets')
+if (import.meta.env.DEV) {
+  console.log('[NeveraMind] Supabase URL defined:', !!supabaseUrl)
+  console.log('[NeveraMind] Supabase Key defined:', !!supabaseAnonKey)
+  if (!supabaseUrl || supabaseUrl === 'MISSING_URL') {
+    console.error('[NeveraMind] VITE_SUPABASE_URL is not set — check GitHub Secrets')
+  }
+  if (!supabaseAnonKey || supabaseAnonKey === 'MISSING_KEY') {
+    console.error('[NeveraMind] VITE_SUPABASE_ANON_KEY is not set — check GitHub Secrets')
+  }
 }
 
 // Guard: don't call createClient with empty values (throws and crashes the app)
@@ -30,7 +30,10 @@ export async function getInventory() {
 }
 
 export async function upsertItem(name, quantity, unit) {
-  const normalizedName = name.trim().toLowerCase()
+  if (!name || !String(name).trim()) throw new Error('El nombre del producto es requerido')
+  const parsedQty = parseFloat(quantity)
+  if (isNaN(parsedQty) || parsedQty < 0) throw new Error('La cantidad debe ser un número mayor o igual a 0')
+  const normalizedName = name.trim().toLowerCase().slice(0, 200)
 
   const { data: existing } = await supabase
     .from('inventory_items')
@@ -69,6 +72,9 @@ export async function upsertItem(name, quantity, unit) {
 }
 
 export async function addItem(name, quantity, unit) {
+  if (!name || !String(name).trim()) throw new Error('El nombre del producto es requerido')
+  const parsedQty = parseFloat(quantity)
+  if (isNaN(parsedQty) || parsedQty < 0) throw new Error('La cantidad debe ser un número mayor o igual a 0')
   const { data, error } = await supabase
     .from('inventory_items')
     .insert({
@@ -95,7 +101,10 @@ export async function updateItemStatus(id, status) {
 }
 
 export async function updateItemQuantity(id, quantity) {
-  const status = parseFloat(quantity) <= 0 ? 'consumido' : 'disponible'
+  if (!id) throw new Error('ID de item requerido')
+  const parsed = parseFloat(quantity)
+  if (isNaN(parsed)) throw new Error('La cantidad debe ser un número válido')
+  const status = parsed <= 0 ? 'consumido' : 'disponible'
   const { data, error } = await supabase
     .from('inventory_items')
     .update({ quantity: Math.max(0, parseFloat(quantity)), status, updated_at: new Date().toISOString() })
@@ -112,8 +121,12 @@ export async function deleteItem(id) {
 }
 
 export async function deductIngredients(ingredients) {
+  if (!Array.isArray(ingredients)) throw new Error('ingredients debe ser un array')
   const updates = []
   for (const ing of ingredients) {
+    if (!ing || typeof ing.name !== 'string' || !ing.name.trim()) continue
+    const qty = parseFloat(ing.quantity)
+    if (isNaN(qty)) continue
     const { data: matches } = await supabase
       .from('inventory_items')
       .select('*')
@@ -122,7 +135,7 @@ export async function deductIngredients(ingredients) {
 
     if (matches && matches.length > 0) {
       const item = matches[0]
-      const newQty = Math.max(0, parseFloat(item.quantity) - parseFloat(ing.quantity))
+      const newQty = Math.max(0, parseFloat(item.quantity) - qty)
       const status = newQty <= 0 ? 'consumido' : 'disponible'
       const { data, error } = await supabase
         .from('inventory_items')

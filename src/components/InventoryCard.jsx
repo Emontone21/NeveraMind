@@ -17,7 +17,11 @@ export default function InventoryCard({ item, onStatusToggle, onQuantityChange, 
 
   async function handleDelete() {
     setDeleting(true)
-    await onDelete(item.id)
+    try {
+      await onDelete(item.id)
+    } catch {
+      setDeleting(false)
+    }
   }
 
   return (

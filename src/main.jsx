@@ -15,6 +15,16 @@ const missingVars = Object.entries(REQUIRED_ENV)
   .filter(([, v]) => !v || v === 'undefined' || v === '')
   .map(([k]) => k)
 
+// Validate Supabase URL format if present
+const supabaseUrl = REQUIRED_ENV.VITE_SUPABASE_URL
+if (supabaseUrl && !missingVars.includes('VITE_SUPABASE_URL')) {
+  try {
+    new URL(supabaseUrl)
+  } catch {
+    missingVars.push('VITE_SUPABASE_URL (URL inválida: ' + supabaseUrl + ')')
+  }
+}
+
 if (missingVars.length > 0) {
   // Show missing vars visibly — covers blank screen when secrets not set in CI
   document.getElementById('root').innerHTML = `

@@ -22,6 +22,7 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      const isDev = import.meta.env.DEV
       return (
         <div style={{
           position: 'fixed', inset: 0,
@@ -31,15 +32,23 @@ export default class ErrorBoundary extends Component {
           zIndex: 9999,
         }}>
           <h2 style={{ fontSize: 18, marginBottom: 12, color: '#991b1b' }}>
-            ⚠️ NeveraMind — Error de inicio
+            ⚠️ NeveraMind — Algo salió mal
           </h2>
-          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginBottom: 16 }}>
-            {String(this.state.error)}
-          </pre>
-          {this.state.info && (
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#6b7280', fontSize: 11 }}>
-              {this.state.info.componentStack}
-            </pre>
+          {isDev ? (
+            <>
+              <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginBottom: 16 }}>
+                {String(this.state.error)}
+              </pre>
+              {this.state.info && (
+                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: '#6b7280', fontSize: 11 }}>
+                  {this.state.info.componentStack}
+                </pre>
+              )}
+            </>
+          ) : (
+            <p style={{ color: '#6b7280', fontSize: 14, marginBottom: 16 }}>
+              Ocurrió un error inesperado. Por favor reiniciá la app.
+            </p>
           )}
           <button
             onClick={() => window.location.reload()}

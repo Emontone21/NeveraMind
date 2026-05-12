@@ -50,6 +50,20 @@ export default function Scanner({ onInventoryUpdate }) {
   function handleFileChange(e) {
     const file = e.target.files[0]
     if (!file) return
+
+    const MAX_SIZE_MB = 10
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      addToast(`La imagen no puede superar los ${MAX_SIZE_MB} MB`, 'error')
+      if (fileRef.current) fileRef.current.value = ''
+      return
+    }
+
+    if (!file.type.startsWith('image/')) {
+      addToast('Solo se aceptan imágenes (JPG, PNG, WEBP)', 'error')
+      if (fileRef.current) fileRef.current.value = ''
+      return
+    }
+
     const mime = file.type || 'image/jpeg'
     setCapturedMime(mime)
     setPreviewUrl(URL.createObjectURL(file))

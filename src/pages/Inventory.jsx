@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   getInventory,
   addItem,
@@ -86,10 +86,18 @@ export default function Inventory({ refreshKey }) {
     }
   }
 
-  const available = items.filter((i) => i.status === 'disponible')
-  const filtered = items
-    .filter((i) => filter === 'todos' || i.status === filter)
-    .filter((i) => !search || i.name.toLowerCase().includes(search.toLowerCase()))
+  const available = useMemo(
+    () => items.filter((i) => i.status === 'disponible'),
+    [items]
+  )
+
+  const filtered = useMemo(
+    () =>
+      items
+        .filter((i) => filter === 'todos' || i.status === filter)
+        .filter((i) => !search || i.name.toLowerCase().includes(search.toLowerCase())),
+    [items, filter, search]
+  )
 
   return (
     <div className="flex flex-col gap-4">

@@ -23,13 +23,14 @@ jobs:
         run: npm ci
 
       - name: Build web app
-        # Env variables are inlined at build time by vite.config.js define block.
-        # Add them as GitHub Secrets: Settings → Secrets → Actions.
+        # Only Supabase vars are inlined at build time. GEMINI_API_KEY is a
+        # Supabase secret used by the gemini-proxy Edge Function — it is never
+        # part of the client bundle. Add the two vars below as GitHub Secrets:
+        # Settings → Secrets and variables → Actions.
         run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
 
       - name: Sync Capacitor iOS
         run: npx cap sync ios

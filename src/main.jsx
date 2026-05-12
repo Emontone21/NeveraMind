@@ -5,10 +5,11 @@ import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
 // ─── Env variable check ───────────────────────────────────────────────────────
+// GEMINI_API_KEY is intentionally absent: it lives in Supabase secrets,
+// never in the client bundle.
 const REQUIRED_ENV = {
   VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
   VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY,
-  VITE_GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY,
 }
 
 const missingVars = Object.entries(REQUIRED_ENV)

@@ -17,17 +17,16 @@ export default defineConfig(({ mode }) => {
       // This transpiles away: optional chaining edge cases, nullish coalescing, etc.
       target: ['es2020', 'safari14'],
     },
-    // Inline every VITE_* variable as a compile-time constant so the built
-    // JS bundle works inside WKWebView (no dynamic import.meta.env at runtime).
+    // Inline VITE_* variables as compile-time constants so the built JS
+    // bundle works inside WKWebView (no dynamic import.meta.env at runtime).
+    // NOTE: GEMINI_API_KEY is intentionally absent — it lives only in
+    // Supabase secrets and is never sent to the client.
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(
         env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
       ),
       'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(
         env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
-      ),
-      'import.meta.env.VITE_GEMINI_API_KEY': JSON.stringify(
-        env.VITE_GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || ''
       ),
     },
   }

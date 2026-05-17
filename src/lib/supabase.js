@@ -29,11 +29,32 @@ export async function getInventory() {
   return data
 }
 
-export async function upsertItem(name, quantity, unit) {
+// Normalise an expires_at input. Accepts:
+//   - 'YYYY-MM-DD' or any ISO date string → kept as 'YYYY-MM-DD'
+//   - Date instance                         → converted to 'YYYY-MM-DD'
+//   - falsy (null/undefined/'')             → null
+function normalizeExpiresAt(value) {
+  if (!value) return null
+  if (value instanceof Date) {
+    if (isNaN(value)) return null
+    const y = value.getFullYear()
+    const m = String(value.getMonth() + 1).padStart(2, '0')
+    const d = String(value.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+  if (typeof value === 'string') {
+    const m = value.match(/^(\d{4}-\d{2}-\d{2})/)
+    return m ? m[1] : null
+  }
+  return null
+}
+
+export async function upsertItem(name, quantity, unit, expiresAt = null) {
   if (!name || !String(name).trim()) throw new Error('El nombre del producto es requerido')
   const parsedQty = parseFloat(quantity)
   if (isNaN(parsedQty) || parsedQty < 0) throw new Error('La cantidad debe ser un número mayor o igual a 0')
   const normalizedName = name.trim().toLowerCase().slice(0, 200)
+  const expiry = normalizeExpiresAt(expiresAt)
 
   const { data: existing } = await supabase
     .from('inventory_items')
@@ -43,11 +64,19 @@ export async function upsertItem(name, quantity, unit) {
 
   if (existing) {
     const newQty = parseFloat(existing.quantity) + parseFloat(quantity)
+    // When merging, keep the EARLIEST expiry date — conservative, avoids
+    // forgetting an older batch that's about to go bad.
+    const mergedExpiry = (() => {
+      if (!expiry) return existing.expires_at
+      if (!existing.expires_at) return expiry
+      return expiry < existing.expires_at ? expiry : existing.expires_at
+    })()
     const { data, error } = await supabase
       .from('inventory_items')
       .update({
         quantity: newQty,
         status: 'disponible',
+        expires_at: mergedExpiry,
         updated_at: new Date().toISOString(),
       })
       .eq('id', existing.id)
@@ -64,6 +93,7 @@ export async function upsertItem(name, quantity, unit) {
       quantity: parseFloat(quantity),
       unit: unit.trim(),
       status: 'disponible',
+      expires_at: expiry,
     })
     .select()
     .single()
@@ -71,7 +101,7 @@ export async function upsertItem(name, quantity, unit) {
   return data
 }
 
-export async function addItem(name, quantity, unit) {
+export async function addItem(name, quantity, unit, expiresAt = null) {
   if (!name || !String(name).trim()) throw new Error('El nombre del producto es requerido')
   const parsedQty = parseFloat(quantity)
   if (isNaN(parsedQty) || parsedQty < 0) throw new Error('La cantidad debe ser un número mayor o igual a 0')
@@ -82,6 +112,7 @@ export async function addItem(name, quantity, unit) {
       quantity: parseFloat(quantity),
       unit: unit.trim(),
       status: 'disponible',
+      expires_at: normalizeExpiresAt(expiresAt),
     })
     .select()
     .single()
@@ -108,6 +139,19 @@ export async function updateItemQuantity(id, quantity) {
   const { data, error } = await supabase
     .from('inventory_items')
     .update({ quantity: Math.max(0, parseFloat(quantity)), status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateItemExpiry(id, expiresAt) {
+  if (!id) throw new Error('ID de item requerido')
+  const expiry = normalizeExpiresAt(expiresAt)
+  const { data, error } = await supabase
+    .from('inventory_items')
+    .update({ expires_at: expiry, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single()

@@ -90,10 +90,17 @@ Deno.serve(async (req: Request) => {
       if (!imageBase64) return respond({ error: 'imageBase64 requerido' }, 400)
 
       const prompt =
-        'Sos un analizador de tickets de supermercado. Extraé todos los artículos de comida y almacén de esta imagen de ticket. ' +
-        'Para cada artículo devolvé: name (nombre en español), quantity (número), y unit (kg, g, L, ml, unidades, etc). ' +
-        'Devolvé SOLO un array JSON como: [{ "name": string, "quantity": number, "unit": string }]. ' +
-        'Si la cantidad no es clara, poné 1 como valor predeterminado en unit. ' +
+        'Sos un analizador de tickets de supermercado. Extraé todos los artículos de comida y almacén de esta imagen de ticket.\n' +
+        'Para cada artículo devolvé:\n' +
+        '- name: nombre en español\n' +
+        '- quantity: número\n' +
+        '- unit: kg, g, L, ml, unidades, etc\n' +
+        '- suggestedExpiryDays: número entero estimado de días que típicamente dura ese producto en heladera o despensa desde la fecha de compra. ' +
+        'Ejemplos de referencia: leche/yogur 7, carne fresca 3, pollo 2, pescado 2, pan 5, verdura de hoja 4, frutas 7, ' +
+        'huevos 21, queso duro 30, fiambres 7, congelados 90, conservas/enlatados/secos (arroz, fideos, harina) 365. ' +
+        'Si el producto no es perecedero o no estás seguro, poné null.\n\n' +
+        'Devolvé SOLO un array JSON como: [{ "name": string, "quantity": number, "unit": string, "suggestedExpiryDays": number|null }].\n' +
+        'Si la cantidad no es clara, poné 1 como valor predeterminado en quantity. ' +
         'No incluyas productos de limpieza, higiene personal ni artículos no alimentarios.'
 
       const result = await model.generateContent([
@@ -115,11 +122,20 @@ Deno.serve(async (req: Request) => {
       if (!Array.isArray(items)) return respond({ error: 'Respuesta inesperada de Gemini' }, 422)
 
       return respond(
-        (items as Record<string, unknown>[]).map((item) => ({
-          name:     String(item.name     ?? '').trim(),
-          quantity: parseFloat(String(item.quantity)) || 1,
-          unit:     String(item.unit     ?? 'unidades').trim(),
-        })),
+        (items as Record<string, unknown>[]).map((item) => {
+          const rawDays = item.suggestedExpiryDays
+          let days: number | null = null
+          if (rawDays !== null && rawDays !== undefined && rawDays !== '') {
+            const n = parseInt(String(rawDays), 10)
+            if (!isNaN(n) && n > 0 && n <= 3650) days = n
+          }
+          return {
+            name:                 String(item.name     ?? '').trim(),
+            quantity:             parseFloat(String(item.quantity)) || 1,
+            unit:                 String(item.unit     ?? 'unidades').trim(),
+            suggestedExpiryDays:  days,
+          }
+        }),
       )
     }
 

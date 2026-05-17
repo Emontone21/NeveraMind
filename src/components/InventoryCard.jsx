@@ -1,8 +1,17 @@
 import { useState } from 'react'
+import ExpiryBadge from './ExpiryBadge'
 
-export default function InventoryCard({ item, onStatusToggle, onQuantityChange, onDelete }) {
+export default function InventoryCard({
+  item,
+  onStatusToggle,
+  onQuantityChange,
+  onExpiryChange,
+  onDelete,
+}) {
   const [editing, setEditing] = useState(false)
   const [qty, setQty] = useState(String(item.quantity))
+  const [editingExpiry, setEditingExpiry] = useState(false)
+  const [expiryValue, setExpiryValue] = useState(item.expires_at ?? '')
   const [deleting, setDeleting] = useState(false)
 
   const isConsumed = item.status === 'consumido'
@@ -13,6 +22,16 @@ export default function InventoryCard({ item, onStatusToggle, onQuantityChange, 
       onQuantityChange(item.id, parsed)
     }
     setEditing(false)
+  }
+
+  function handleExpiryCommit() {
+    setEditingExpiry(false)
+    // Only call onChange if the value actually changed
+    const newVal = expiryValue || null
+    const oldVal = item.expires_at || null
+    if (newVal !== oldVal) {
+      onExpiryChange?.(item.id, newVal)
+    }
   }
 
   async function handleDelete() {
@@ -34,6 +53,7 @@ export default function InventoryCard({ item, onStatusToggle, onQuantityChange, 
         <p className={`font-semibold text-sm truncate ${isConsumed ? 'line-through text-brand-400' : 'text-brand-900'}`}>
           {item.name}
         </p>
+
         <div className="flex items-center gap-1 mt-0.5">
           {editing ? (
             <input
@@ -58,6 +78,37 @@ export default function InventoryCard({ item, onStatusToggle, onQuantityChange, 
           )}
           <span className="text-xs text-brand-400">{item.unit}</span>
         </div>
+
+        {/* Expiry row — editable inline. Hidden for consumed items. */}
+        {!isConsumed && (
+          <div className="mt-1.5">
+            {editingExpiry ? (
+              <input
+                type="date"
+                className="text-xs bg-brand-50 border border-brand-300 rounded-lg px-2 py-1 focus:outline-none focus:border-brand-500"
+                value={expiryValue ?? ''}
+                onChange={(e) => setExpiryValue(e.target.value)}
+                onBlur={handleExpiryCommit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleExpiryCommit()
+                  if (e.key === 'Escape') {
+                    setExpiryValue(item.expires_at ?? '')
+                    setEditingExpiry(false)
+                  }
+                }}
+                autoFocus
+              />
+            ) : (
+              <ExpiryBadge
+                item={item}
+                onClick={() => {
+                  setExpiryValue(item.expires_at ?? '')
+                  setEditingExpiry(true)
+                }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2 shrink-0">

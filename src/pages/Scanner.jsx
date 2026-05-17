@@ -3,10 +3,25 @@ import { Capacitor } from '@capacitor/core'
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera'
 import { parseReceipt } from '../lib/gemini'
 import { upsertItem } from '../lib/supabase'
+import { daysFromNowIso, defaultExpiryDays } from '../lib/expiry'
+import {
+  requestPermissions as requestNotifPermissions,
+  scheduleExpiryNotification,
+} from '../lib/notifications'
 import { useToast } from '../context/AppContext'
 import Spinner from '../components/Spinner'
 
 const IS_NATIVE = Capacitor.isNativePlatform()
+
+// Initial expiry for a review row: Gemini's suggestion, else a heuristic by
+// product name, else blank.
+function suggestExpiry(item) {
+  if (typeof item.suggestedExpiryDays === 'number' && item.suggestedExpiryDays > 0) {
+    return daysFromNowIso(item.suggestedExpiryDays) ?? ''
+  }
+  const days = defaultExpiryDays(item.name)
+  return days ? (daysFromNowIso(days) ?? '') : ''
+}
 
 export default function Scanner({ onInventoryUpdate }) {
   const [phase, setPhase] = useState('upload') // upload | preview | review | loading
@@ -19,6 +34,7 @@ export default function Scanner({ onInventoryUpdate }) {
   const [manualName, setManualName] = useState('')
   const [manualQty, setManualQty] = useState('1')
   const [manualUnit, setManualUnit] = useState('unidades')
+  const [manualExpiry, setManualExpiry] = useState('')
   const fileRef = useRef(null)
   const { addToast } = useToast()
 
@@ -89,7 +105,14 @@ export default function Scanner({ onInventoryUpdate }) {
         setPhase('review')
         setItems([])
       } else {
-        setItems(extracted.map((i, idx) => ({ ...i, _id: idx })))
+        // Hydrate each row with a suggested expiry so the user can review it
+        setItems(
+          extracted.map((i, idx) => ({
+            ...i,
+            expiresAt: suggestExpiry(i),
+            _id: idx,
+          }))
+        )
         setPhase('review')
       }
     } catch (err) {
@@ -114,13 +137,27 @@ export default function Scanner({ onInventoryUpdate }) {
 
   function addManualItem() {
     if (!manualName.trim()) return
+    // Heuristic default when the user didn't pick a date
+    const expiry =
+      manualExpiry ||
+      (defaultExpiryDays(manualName)
+        ? daysFromNowIso(defaultExpiryDays(manualName)) ?? ''
+        : '')
+
     setItems((prev) => [
       ...prev,
-      { name: manualName.trim(), quantity: parseFloat(manualQty) || 1, unit: manualUnit.trim(), _id: Date.now() },
+      {
+        name: manualName.trim(),
+        quantity: parseFloat(manualQty) || 1,
+        unit: manualUnit.trim(),
+        expiresAt: expiry,
+        _id: Date.now(),
+      },
     ])
     setManualName('')
     setManualQty('1')
     setManualUnit('unidades')
+    setManualExpiry('')
   }
 
   async function handleConfirm() {
@@ -130,10 +167,30 @@ export default function Scanner({ onInventoryUpdate }) {
     }
     setSaving(true)
     try {
+      const saved = []
       for (const item of items) {
-        await upsertItem(item.name, item.quantity, item.unit)
+        const row = await upsertItem(
+          item.name,
+          item.quantity,
+          item.unit,
+          item.expiresAt || null
+        )
+        saved.push(row)
       }
-      addToast(`✓ ${items.length} producto${items.length !== 1 ? 's' : ''} agregado${items.length !== 1 ? 's' : ''} al inventario`)
+      addToast(
+        `✓ ${items.length} producto${items.length !== 1 ? 's' : ''} agregado${items.length !== 1 ? 's' : ''} al inventario`
+      )
+
+      // Fire-and-forget: ask permission once + schedule reminders for items
+      // that ended up with an expiry date.
+      const withExpiry = saved.filter((s) => s?.expires_at && s.status === 'disponible')
+      if (withExpiry.length > 0) {
+        requestNotifPermissions().catch(() => {})
+        Promise.all(
+          withExpiry.map((s) => scheduleExpiryNotification(s))
+        ).catch(() => {})
+      }
+
       onInventoryUpdate?.()
       resetAll()
     } catch (err) {
@@ -203,25 +260,32 @@ export default function Scanner({ onInventoryUpdate }) {
           </div>
 
           {items.length > 0 && (
-            <div className="flex flex-col gap-2">
-              {items.map((item, idx) => (
-                <ReviewItem
-                  key={item._id}
-                  item={item}
-                  onChange={(field, val) => updateItem(idx, field, val)}
-                  onRemove={() => removeItem(idx)}
-                />
-              ))}
-            </div>
+            <>
+              <p className="text-[11px] text-brand-500 -mt-2">
+                Revisá las fechas de vencimiento — son estimaciones automáticas.
+              </p>
+              <div className="flex flex-col gap-2">
+                {items.map((item, idx) => (
+                  <ReviewItem
+                    key={item._id}
+                    item={item}
+                    onChange={(field, val) => updateItem(idx, field, val)}
+                    onRemove={() => removeItem(idx)}
+                  />
+                ))}
+              </div>
+            </>
           )}
 
           <AddManualItem
             name={manualName}
             qty={manualQty}
             unit={manualUnit}
+            expiry={manualExpiry}
             onNameChange={setManualName}
             onQtyChange={setManualQty}
             onUnitChange={setManualUnit}
+            onExpiryChange={setManualExpiry}
             onAdd={addManualItem}
           />
 
@@ -280,10 +344,10 @@ function WebUploadZone({ fileRef, onChange }) {
 // ─── Review / edit extracted items ────────────────────────────────────────────
 function ReviewItem({ item, onChange, onRemove }) {
   return (
-    <div className="card flex items-center gap-2 py-3">
-      <div className="flex-1 min-w-0">
+    <div className="card flex items-start gap-2 py-3">
+      <div className="flex-1 min-w-0 flex flex-col gap-1">
         <input
-          className="input-field text-sm py-2 mb-1"
+          className="input-field text-sm py-2"
           value={item.name}
           onChange={(e) => onChange('name', e.target.value)}
           placeholder="Nombre del producto"
@@ -304,6 +368,15 @@ function ReviewItem({ item, onChange, onRemove }) {
             placeholder="unidad"
           />
         </div>
+        <label className="flex items-center gap-2">
+          <span className="text-[11px] font-medium text-brand-500 shrink-0">Vence:</span>
+          <input
+            type="date"
+            className="input-field text-sm py-1.5 flex-1"
+            value={item.expiresAt ?? ''}
+            onChange={(e) => onChange('expiresAt', e.target.value)}
+          />
+        </label>
       </div>
       <button
         onClick={onRemove}
@@ -316,7 +389,17 @@ function ReviewItem({ item, onChange, onRemove }) {
 }
 
 // ─── Add item manually ─────────────────────────────────────────────────────────
-function AddManualItem({ name, qty, unit, onNameChange, onQtyChange, onUnitChange, onAdd }) {
+function AddManualItem({
+  name,
+  qty,
+  unit,
+  expiry,
+  onNameChange,
+  onQtyChange,
+  onUnitChange,
+  onExpiryChange,
+  onAdd,
+}) {
   return (
     <div className="card border-dashed border-2 border-brand-200 bg-brand-50">
       <p className="text-xs font-semibold text-brand-500 uppercase tracking-wide mb-3">
@@ -347,6 +430,15 @@ function AddManualItem({ name, qty, unit, onNameChange, onQtyChange, onUnitChang
             onChange={(e) => onUnitChange(e.target.value)}
           />
         </div>
+        <label className="flex items-center gap-2">
+          <span className="text-[11px] font-medium text-brand-500 shrink-0">Vence:</span>
+          <input
+            type="date"
+            className="input-field text-sm py-1.5 flex-1"
+            value={expiry ?? ''}
+            onChange={(e) => onExpiryChange(e.target.value)}
+          />
+        </label>
         <button className="btn-secondary w-full text-sm py-2" onClick={onAdd}>
           Agregar
         </button>

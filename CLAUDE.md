@@ -27,11 +27,18 @@ VITE_GEMINI_API_KEY=...
 | quantity | numeric | cantidad |
 | unit | text | kg / g / L / ml / unidades / etc |
 | status | text | `'disponible'` \| `'consumido'` |
+| expires_at | date | fecha de vencimiento estimada (nullable) |
 | created_at | timestamptz | auto |
 | updated_at | timestamptz | auto (trigger) |
 
 - RLS habilitado, política `Allow all for anon` (app single-user, sin auth)
 - Índice `idx_inventory_name` en `lower(name)` para búsqueda de upsert
+- Índice parcial `idx_inventory_expires_disponible` para la sección "Por vencer pronto"
+
+### Migraciones
+Se aplican manualmente en el SQL Editor de Supabase:
+- `supabase_schema.sql` — schema completo (idempotente)
+- `supabase/migrations/0002_add_expiry.sql` — agrega `expires_at` + índice
 
 ## Estructura de archivos
 ```
@@ -42,11 +49,14 @@ src/
 ├── context/
 │   └── AppContext.jsx        # ToastProvider + useToast hook (toasts globales)
 ├── lib/
-│   ├── supabase.js           # Todas las operaciones DB (getInventory, upsertItem, deductIngredients, etc)
-│   └── gemini.js             # parseReceipt() + getRecipeSuggestions()
+│   ├── supabase.js           # Operaciones DB (getInventory, upsertItem, updateItemExpiry, deductIngredients, etc)
+│   ├── gemini.js             # parseReceipt() + getRecipeSuggestions() + getGeneralSuggestions()
+│   ├── expiry.js             # Helpers de fechas (daysUntilExpiry, bucket, label, defaults)
+│   └── notifications.js      # Wrapper de @capacitor/local-notifications (no-op en web)
 ├── components/
 │   ├── BottomNav.jsx         # Navegación inferior con 3 tabs
-│   ├── InventoryCard.jsx     # Card de item: toggle status, edición inline de qty, delete
+│   ├── InventoryCard.jsx     # Card de item: toggle status, edición inline qty+vencimiento, delete
+│   ├── ExpiryBadge.jsx       # Badge de fecha con color por bucket (rojo/naranja/amarillo/verde)
 │   ├── Spinner.jsx           # Loading state con emoji y mensaje
 │   └── EmptyState.jsx        # Estado vacío genérico
 └── pages/
@@ -62,16 +72,20 @@ public/
 ## Flujos principales
 
 ### Scanner
-1. Usuario sube foto → `FileReader` → base64
-2. `parseReceipt()` envía imagen a Gemini Vision con prompt en español
-3. Respuesta JSON parseada → lista editable (nombre, cantidad, unidad)
-4. Al confirmar: `upsertItem()` por cada item — si el nombre ya existe (ilike), **suma** la cantidad
+1. Usuario sube foto (Capacitor Camera o `<input type="file">`) → base64
+2. `parseReceipt()` envía la imagen al Edge Function `gemini-proxy`. Gemini devuelve `name`, `quantity`, `unit` y `suggestedExpiryDays` por producto
+3. El review pre-llena fechas de vencimiento (today + suggestedDays, o fallback heurístico por keyword en español). Editables como `<input type="date">`
+4. Al confirmar: `upsertItem(name, qty, unit, expiresAt)` por cada item — si ya existe (ilike), **suma cantidad** + **mantiene la fecha más temprana**
+5. Después de guardar: pide permiso de notificaciones + agenda recordatorios via `scheduleExpiryNotification()`
 
 ### Inventory
 - CRUD completo vía Supabase
-- Toggle disponible/consumido: `updateItemStatus()`
-- Edición inline de cantidad: click en el número → input → blur confirma
+- Toggle disponible/consumido: `updateItemStatus()` — cancela la notif si pasa a consumido
+- Edición inline de cantidad y fecha de vencimiento
 - Si cantidad llega a 0, se marca automáticamente como consumido
+- **Sección "Por vencer pronto"** (`selectExpiring(items, 3)`): card naranja en el tope con los items que vencen en ≤ 3 días (o ya vencidos)
+- Cada card tiene un `<ExpiryBadge>` con color por bucket (`expired`/`critical`/`soon`/`week`/`ok`)
+- En cada `load()` se re-sincronizan las notificaciones locales contra el inventario actual
 
 ### Recipes
 1. Carga solo items con `status = 'disponible'`
@@ -81,10 +95,12 @@ public/
 
 ## Decisiones técnicas importantes
 - **Modelo Gemini:** usar siempre `gemini-2.5-flash` — `gemini-1.5-flash` fue deprecado
-- **Upsert por nombre:** comparación case-insensitive con `.ilike()` de Supabase
+- **Upsert por nombre:** comparación case-insensitive con `.ilike()` de Supabase. En merge se queda la `expires_at` **más temprana** (conservador, no olvida lotes viejos)
 - **Sin autenticación:** RLS con política open, app single-user
 - **Toast system:** global vía Context, auto-dismiss en 3 segundos
 - **SW:** no cachea requests a `supabase.co` ni `googleapis.com` (siempre fresh)
+- **Local Notifications:** se accede a `Capacitor.Plugins.LocalNotifications` directo (sin import del módulo NPM) para que el JS bundle compile aun cuando el paquete no esté instalado. La integración nativa requiere instalar el package + `cap sync ios`.
+- **Notification ID:** primeros 8 hex chars del UUID → int. Determinístico, colisión despreciable a escala single-user.
 
 ## Comandos
 ```bash
